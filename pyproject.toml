@@ -1,0 +1,16 @@
+[project]
+name = "podcast-api-live"
+version = "0.1.0"
+description = "Add your description here"
+readme = "README.md"
+requires-python = ">=3.12"
+dependencies = [
+    "pyaudio",
+    "google-generativeai",
+    "google",
+    "google-genai",
+    "google-adk",
+    "python-dotenv",
+    "fastapi",
+    "uvicorn[standard]",
+]
