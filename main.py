@@ -2,12 +2,14 @@
 # Gera podcasts a partir de um tema usando LLM + TTS
 
 import io
+import logging
 import mimetypes
 import os
 import struct
 from typing import Optional
 
 from fastapi import FastAPI, HTTPException
+from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import Response
 from pydantic import BaseModel, Field
 from google import genai
@@ -15,6 +17,13 @@ from google.genai import types
 from dotenv import load_dotenv
 
 load_dotenv()
+
+# Configuração de logging para debug
+logging.basicConfig(
+    level=logging.DEBUG,
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+)
+logger = logging.getLogger(__name__)
 
 # ============================================================
 # FastAPI App
@@ -24,6 +33,15 @@ app = FastAPI(
     title="Podcast Generator API",
     description="API para geração de podcasts usando LLM para criar scripts e TTS para gerar áudio",
     version="1.0.0"
+)
+
+# Configuração de CORS para permitir requisições do frontend
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],  # Em produção, especifique os domínios permitidos
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
 )
 
 
@@ -82,22 +100,34 @@ async def generate_podcast_script(tema: str, duracao_minutos: int = 3) -> str:
     Returns:
         Script formatado com Speaker 1 e Speaker 2
     """
-    client = genai.Client(api_key=os.getenv("GEMINI_API_KEY"))
+    logger.info(f"[SCRIPT] Iniciando geração de script - Tema: {tema[:100]}..., Duração: {duracao_minutos} min")
     
-    prompt = SCRIPT_GENERATOR_PROMPT.format(
-        duracao=duracao_minutos,
-        tema=tema
-    )
-    
-    response = client.models.generate_content(
-        model="gemini-2.5-flash",
-        contents=prompt
-    )
-    
-    if not response.text:
-        raise HTTPException(status_code=500, detail="Falha ao gerar script do podcast")
-    
-    return response.text
+    try:
+        client = genai.Client(api_key=os.getenv("GEMINI_API_KEY"))
+        logger.debug("[SCRIPT] Cliente Gemini criado com sucesso")
+        
+        prompt = SCRIPT_GENERATOR_PROMPT.format(
+            duracao=duracao_minutos,
+            tema=tema
+        )
+        logger.debug(f"[SCRIPT] Prompt formatado, tamanho: {len(prompt)} chars")
+        
+        response = client.models.generate_content(
+            model="gemini-2.5-flash",
+            contents=prompt
+        )
+        logger.debug("[SCRIPT] Resposta recebida do Gemini")
+        
+        if not response.text:
+            logger.error("[SCRIPT] Resposta vazia do Gemini")
+            raise HTTPException(status_code=500, detail="Falha ao gerar script do podcast")
+        
+        logger.info(f"[SCRIPT] Script gerado com sucesso, tamanho: {len(response.text)} chars")
+        return response.text
+        
+    except Exception as e:
+        logger.exception(f"[SCRIPT] Erro ao gerar script: {e}")
+        raise
 
 
 # ============================================================
@@ -185,80 +215,98 @@ def generate_podcast_audio(script: str) -> bytes:
     Returns:
         Áudio WAV em bytes
     """
-    client = genai.Client(api_key=os.getenv("GEMINI_API_KEY"))
+    logger.info(f"[TTS] Iniciando geração de áudio, script tem {len(script)} chars")
+    
+    try:
+        client = genai.Client(api_key=os.getenv("GEMINI_API_KEY"))
+        logger.debug("[TTS] Cliente Gemini criado para TTS")
 
-    model = "gemini-2.5-pro-preview-tts"
-    
-    contents = [
-        types.Content(
-            role="user",
-            parts=[
-                types.Part.from_text(
-                    text=f"Please read aloud the following in a podcast interview style:\n{script}"
-                ),
-            ],
-        ),
-    ]
-    
-    generate_content_config = types.GenerateContentConfig(
-        temperature=1,
-        response_modalities=["audio"],
-        speech_config=types.SpeechConfig(
-            multi_speaker_voice_config=types.MultiSpeakerVoiceConfig(
-                speaker_voice_configs=[
-                    types.SpeakerVoiceConfig(
-                        speaker="Speaker 1",
-                        voice_config=types.VoiceConfig(
-                            prebuilt_voice_config=types.PrebuiltVoiceConfig(
-                                voice_name="Zephyr"
-                            )
-                        ),
+        model = "gemini-2.5-pro-preview-tts"
+        logger.debug(f"[TTS] Usando modelo: {model}")
+        
+        contents = [
+            types.Content(
+                role="user",
+                parts=[
+                    types.Part.from_text(
+                        text=f"Please read aloud the following in a podcast interview style:\n{script}"
                     ),
-                    types.SpeakerVoiceConfig(
-                        speaker="Speaker 2",
-                        voice_config=types.VoiceConfig(
-                            prebuilt_voice_config=types.PrebuiltVoiceConfig(
-                                voice_name="Puck"
-                            )
-                        ),
-                    ),
-                ]
+                ],
             ),
-        ),
-    )
+        ]
+        
+        generate_content_config = types.GenerateContentConfig(
+            temperature=1,
+            response_modalities=["audio"],
+            speech_config=types.SpeechConfig(
+                multi_speaker_voice_config=types.MultiSpeakerVoiceConfig(
+                    speaker_voice_configs=[
+                        types.SpeakerVoiceConfig(
+                            speaker="Speaker 1",
+                            voice_config=types.VoiceConfig(
+                                prebuilt_voice_config=types.PrebuiltVoiceConfig(
+                                    voice_name="Zephyr"
+                                )
+                            ),
+                        ),
+                        types.SpeakerVoiceConfig(
+                            speaker="Speaker 2",
+                            voice_config=types.VoiceConfig(
+                                prebuilt_voice_config=types.PrebuiltVoiceConfig(
+                                    voice_name="Puck"
+                                )
+                            ),
+                        ),
+                    ]
+                ),
+            ),
+        )
 
-    # Coleta todos os chunks de áudio
-    audio_chunks = []
-    
-    for chunk in client.models.generate_content_stream(
-        model=model,
-        contents=contents,
-        config=generate_content_config,
-    ):
-        if (
-            chunk.candidates is None
-            or chunk.candidates[0].content is None
-            or chunk.candidates[0].content.parts is None
+        logger.debug("[TTS] Iniciando streaming de áudio do Gemini...")
+        
+        # Coleta todos os chunks de áudio
+        audio_chunks = []
+        chunk_count = 0
+        
+        for chunk in client.models.generate_content_stream(
+            model=model,
+            contents=contents,
+            config=generate_content_config,
         ):
-            continue
-            
-        part = chunk.candidates[0].content.parts[0]
-        if part.inline_data and part.inline_data.data:
-            inline_data = part.inline_data
-            data_buffer = inline_data.data
-            
-            # Converte para WAV se necessário
-            file_extension = mimetypes.guess_extension(inline_data.mime_type)
-            if file_extension is None:
-                data_buffer = convert_to_wav(inline_data.data, inline_data.mime_type)
-            
-            audio_chunks.append(data_buffer)
-    
-    if not audio_chunks:
-        raise HTTPException(status_code=500, detail="Falha ao gerar áudio do podcast")
-    
-    # Combina todos os chunks (o primeiro já tem o header WAV)
-    return b"".join(audio_chunks)
+            if (
+                chunk.candidates is None
+                or chunk.candidates[0].content is None
+                or chunk.candidates[0].content.parts is None
+            ):
+                logger.debug(f"[TTS] Chunk {chunk_count} vazio, pulando...")
+                continue
+                
+            part = chunk.candidates[0].content.parts[0]
+            if part.inline_data and part.inline_data.data:
+                inline_data = part.inline_data
+                data_buffer = inline_data.data
+                
+                # Converte para WAV se necessário
+                file_extension = mimetypes.guess_extension(inline_data.mime_type)
+                if file_extension is None:
+                    data_buffer = convert_to_wav(inline_data.data, inline_data.mime_type)
+                
+                audio_chunks.append(data_buffer)
+                chunk_count += 1
+                logger.debug(f"[TTS] Chunk {chunk_count} recebido, tamanho: {len(data_buffer)} bytes")
+        
+        if not audio_chunks:
+            logger.error("[TTS] Nenhum chunk de áudio recebido!")
+            raise HTTPException(status_code=500, detail="Falha ao gerar áudio do podcast")
+        
+        # Combina todos os chunks (o primeiro já tem o header WAV)
+        total_audio = b"".join(audio_chunks)
+        logger.info(f"[TTS] Áudio gerado com sucesso! Total: {len(total_audio)} bytes, {chunk_count} chunks")
+        return total_audio
+        
+    except Exception as e:
+        logger.exception(f"[TTS] Erro ao gerar áudio: {e}")
+        raise
 
 
 # ============================================================
@@ -268,6 +316,7 @@ def generate_podcast_audio(script: str) -> bytes:
 @app.get("/")
 async def root():
     """Health check endpoint"""
+    logger.debug("[API] Health check chamado")
     return {"status": "ok", "message": "Podcast Generator API"}
 
 
@@ -277,7 +326,9 @@ async def generate_script(request: PodcastRequest):
     Gera apenas o script do podcast (sem áudio).
     Útil para preview e ajustes antes de gerar o áudio.
     """
+    logger.info(f"[API] POST /podcast/script - Tema: {request.tema[:50]}..., Duração: {request.duracao_minutos} min")
     script = await generate_podcast_script(request.tema, request.duracao_minutos)
+    logger.info("[API] /podcast/script concluído com sucesso")
     return PodcastScriptResponse(script=script)
 
 
@@ -290,11 +341,15 @@ async def create_podcast(request: PodcastRequest):
     2. Converte o script em áudio usando TTS
     3. Retorna o áudio em formato WAV
     """
+    logger.info(f"[API] POST /podcast/generate - Tema: {request.tema[:50]}..., Duração: {request.duracao_minutos} min")
+    
     # Gera o script via LLM
     script = await generate_podcast_script(request.tema, request.duracao_minutos)
     
     # Gera o áudio via TTS
     audio = generate_podcast_audio(script)
+    
+    logger.info(f"[API] /podcast/generate concluído - Áudio: {len(audio)} bytes")
     
     # Retorna o áudio como WAV
     return Response(
@@ -312,7 +367,10 @@ async def create_podcast_from_script(script: str):
     Gera áudio a partir de um script já pronto.
     Use este endpoint se você já tem um script formatado.
     """
+    logger.info(f"[API] POST /podcast/generate-from-script - Script: {len(script)} chars")
     audio = generate_podcast_audio(script)
+    
+    logger.info(f"[API] /podcast/generate-from-script concluído - Áudio: {len(audio)} bytes")
     
     return Response(
         content=audio,

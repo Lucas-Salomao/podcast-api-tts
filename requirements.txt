@@ -1,0 +1,7 @@
+pyaudio
+google-generativeai
+google
+google-genai
+python-dotenv
+fastapi
+uvicorn
