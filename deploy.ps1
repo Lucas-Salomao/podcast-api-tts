@@ -59,7 +59,12 @@ gcloud run deploy $SERVICE_NAME `
     --image $IMAGE_TAG `
     --region $REGION `
     --allow-unauthenticated `
-    --port 8080
+    --port 8080 `
+    --memory 2Gi `
+    --cpu 2 `
+    --timeout 300 `
+    --min-instances 0 `
+    --max-instances 5
 
 if ($LASTEXITCODE -eq 0) {
     Write-Host "Deploy concluído com sucesso!"

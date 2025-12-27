@@ -6,3 +6,6 @@ python-dotenv
 fastapi
 python-multipart
 uvicorn
+google-cloud-storage
+asyncpg
+sqlalchemy
