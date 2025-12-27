@@ -1,137 +1,478 @@
-# Podcast API TTS (Generator)
+# 🎙️ Podcast Generator API
 
-Este projeto é uma **API de Geração de Podcasts** de alta performance, projetada para transformar temas e tópicos em podcasts de áudio realistas e envolventes. Utilizando o estado da arte em **Inteligência Artificial Generativa**, a solução combina a capacidade de roteirização criativa do **Gemini 2.5 Flash** com a expressividade vocal do **Gemini 2.5 Pro TTS (Text-to-Speech)**.
+API de alta performance para geração de podcasts usando **Gemini 2.5 Flash** (roteirização) + **Gemini 2.5 Pro TTS** (síntese de voz multi-speaker).
 
----
-
-## 🏗️ Arquitetura do Projeto
-
-A solução foi arquitetada seguindo o padrão de **Microsserviços**, encapsulada em container Docker para garantir portabilidade e escalabilidade. O backend é construído em **Python** utilizando o framework **FastAPI**, conhecido por sua altíssima performance (baseada em Starlette e Pydantic) e suporte nativo a operações assíncronas.
-
-### Visão Geral da Arquitetura
-
-O fluxo de dados segue uma abordagem linear de pipelines:
-1.  **Input**: O cliente envia um tema e duração desejada.
-2.  **Scripting Pipeline**: A API orquestra uma chamada ao LLM (Gemini 2.5 Flash) com engenharia de prompt avançada para gerar um roteiro de podcast natural, simulando dois apresentadores (Speaker 1 e Speaker 2).
-3.  **Audio Synthesis Pipeline**: O roteiro gerado é processado pelo motor de TTS (Gemini 2.5 Pro), que sintetiza vozes distintas para cada speaker ("Zephyr" e "Puck") e gera o áudio final.
-4.  **Output**: O áudio sintetizado é convertido para o container WAV e streamado de volta ao cliente.
-
-### Diagrama de Arquitetura (High-Level)
-
-Abaixo uma representação da arquitetura baseada no diagrama original do projeto.
-
-![Arquitetura High-Level](diagrams/arquitetura.drawio.png)
-
-> 📐 **Diagrama Fonte**: O diagrama original editável está disponível em: [diagrams/arquitetura.drawio](diagrams/arquitetura.drawio). Recomenda-se usar o [diagrams.net](https://app.diagrams.net/) para visualização e edição completa.
+![Python](https://img.shields.io/badge/Python-3.12-blue)
+![FastAPI](https://img.shields.io/badge/FastAPI-0.100+-green)
+![Gemini](https://img.shields.io/badge/Gemini-2.5-orange)
+![License](https://img.shields.io/badge/License-MIT-lightgrey)
 
 ---
 
-## 🧩 Arquitetura de Software e Componentes
+## 📖 Índice
 
-O projeto adota uma estrutura limpa e modular com foco em **Separação de Preocupações (SoC)**.
+- [Visão Geral](#-visão-geral)
+- [Arquitetura de Alto Nível](#-arquitetura-de-alto-nível)
+- [Arquitetura Modular](#-arquitetura-modular)
+- [Fluxo de Dados](#-fluxo-de-dados)
+- [Diagrama de Sequência](#-diagrama-de-sequência)
+- [API Endpoints](#-api-endpoints)
+- [Estrutura do Projeto](#-estrutura-do-projeto)
+- [Instalação e Uso](#-instalação-e-uso)
+- [Deploy em Produção](#-deploy-em-produção)
 
-### Estrutura de Pastas e Arquivos
+---
 
-*   **`main.py`**: O coração da aplicação. Contém:
-    *   **Models (Pydantic)**: Definição estrita dos contratos de dados (`PodcastRequest`, `PodcastScriptResponse`).
-    *   **Services**: Funções isoladas para interação com APIs externas (`generate_podcast_script`, `generate_podcast_audio`).
-    *   **Utils**: Utilitários de baixo nível para manipulação de bytes de áudio (`convert_to_wav`, `parse_audio_mime_type`).
-    *   **Controllers/Routes**: Endpoints da API.
-*   **`Dockerfile`**: Definição do ambiente de execução, otimizado com imagem base `python:3.12-slim-bookworm` e dependências de sistema para processamento de áudio (`portaudio19-dev`).
-*   **`requirements.txt`**: Gerenciamento de dependências Python.
+## 🎯 Visão Geral
 
-### Diagrama de Classes e Componentes
+O **Podcast Generator API** transforma temas em podcasts de áudio realistas e envolventes. A solução utiliza:
+
+| Componente | Tecnologia | Função |
+|------------|------------|--------|
+| **Backend** | FastAPI + Python 3.12 | API REST assíncrona de alta performance |
+| **Roteirização** | Gemini 2.5 Flash | Geração de scripts com engenharia de prompt |
+| **Síntese de Voz** | Gemini 2.5 Pro TTS | Multi-speaker com 30+ vozes disponíveis |
+| **Containerização** | Docker | Deploy portável e escalável |
+
+### Features
+
+- ✅ **Multi-host**: Suporta de 1 a 10 apresentadores
+- ✅ **30 vozes**: Femininas e masculinas com personalidades distintas
+- ✅ **Upload de documentos**: Use PDFs/textos como base para o conteúdo
+- ✅ **Aprimoramento de texto**: IA expande ideias simples em descrições ricas
+- ✅ **Preview de script**: Valide o roteiro antes de gerar o áudio
+- ✅ **Output WAV**: Áudio de alta qualidade (24kHz, 16-bit PCM)
+
+---
+
+## 🏗️ Arquitetura de Alto Nível
 
 ```mermaid
-classDiagram
-    class PodcastRequest {
-        +str tema
-        +int duracao_minutos
-    }
-    class PodcastAPI {
-        +POST /podcast/generate(PodcastRequest)
-        +POST /podcast/script(PodcastRequest)
-        +POST /podcast/generate-from-script(script)
-    }
-    class ScriptService {
-        +generate_podcast_script(tema, duracao) str
-        -SCRIPT_GENERATOR_PROMPT
-    }
-    class AudioService {
-        +generate_podcast_audio(script) bytes
-        +convert_to_wav(raw_data, mime) bytes
-        -parse_audio_mime_type(mime) dict
-    }
-    class GeminiClient {
-        +generate_content()
-        +generate_content_stream()
-    }
+flowchart TB
+    subgraph Cliente["🖥️ Cliente"]
+        FE[Frontend Next.js]
+    end
 
-    PodcastAPI --> PodcastRequest : uses
-    PodcastAPI --> ScriptService : calls
-    PodcastAPI --> AudioService : calls
-    ScriptService --> GeminiClient : uses
-    AudioService --> GeminiClient : uses
+    subgraph API["⚡ Podcast Generator API"]
+        direction TB
+        FAST[FastAPI Server]
+        
+        subgraph Services["Services Layer"]
+            ES[Enhance Service]
+            SS[Script Service]
+            TTS[TTS Service]
+        end
+    end
+
+    subgraph External["☁️ Google Cloud"]
+        GEMINI_LLM[Gemini 2.5 Flash<br/>LLM]
+        GEMINI_TTS[Gemini 2.5 Pro<br/>TTS]
+    end
+
+    FE -->|"POST /podcast/generate"| FAST
+    FAST --> ES
+    FAST --> SS
+    FAST --> TTS
+    
+    ES -->|"Aprimora texto"| GEMINI_LLM
+    SS -->|"Gera script"| GEMINI_LLM
+    TTS -->|"Sintetiza áudio"| GEMINI_TTS
+    
+    FAST -->|"audio/wav"| FE
+
+    style Cliente fill:#e1f5fe
+    style API fill:#fff3e0
+    style External fill:#f3e5f5
 ```
 
 ---
 
-## 🚀 Fluxo de Funcionamento Detalhado
+## 🧩 Arquitetura Modular
 
-### 1. Geração de Script (Scripting Engine)
-O processo começa com a função `generate_podcast_script`.
-*   O sistema carrega um **System Prompt** especializado, instruindo o modelo a agir como um roteirista de podcast brasileiro.
-*   **Prompt Engineering**: O prompt impõe regras estritas de formatação ("Speaker 1:", "Speaker 2:") para garantir que o parser de TTS consiga identificar as trocas de turno.
-*   **Modelo**: Utiliza `gemini-2.5-flash` por sua baixa latência e alta capacidade de contexto.
+O projeto segue uma arquitetura **modular e desacoplada** com separação clara de responsabilidades:
 
-### 2. Síntese de Áudio (TTS Engine)
-A função `generate_podcast_audio` processa o texto.
-*   **Multi-Speaker Configuration**: Configura o `MultiSpeakerVoiceConfig` do Gemini API.
-    *   **Speaker 1**: Voz "Zephyr" (Tom mais grave/sério ou balanceado).
-    *   **Speaker 2**: Voz "Puck" (Tom mais dinâmico/energético).
-*   **Streaming & Buffering**: A resposta do TTS é recebida em streams (chunks). O código coleta esses chunks, identifica o MIME type, decodifica o áudio raw e reagrupa tudo.
-*   **WAV Encoding**: Como o áudio pode vir em formatos raw (PCM), a função `convert_to_wav` adiciona o cabeçalho RIFF/WAVE canônico (44.1kHz ou 24kHz, 16-bit PCM) para garantir compatibilidade com qualquer player.
+```mermaid
+graph TD
+    subgraph "Entry Point"
+        MAIN["main.py<br/>(entry point)"]
+    end
+
+    subgraph "app/"
+        APP_MAIN["app/main.py<br/>FastAPI Factory"]
+        
+        subgraph "core/"
+            CONFIG["config.py<br/>Settings & ENV"]
+            LOGGING["logging.py<br/>Logger Setup"]
+        end
+        
+        subgraph "models/"
+            SCHEMAS["schemas.py<br/>Pydantic Models"]
+            VOICES["voices.py<br/>Voice Configs"]
+        end
+        
+        subgraph "services/"
+            ENHANCE["enhance_service.py<br/>Text Enhancement"]
+            SCRIPT["script_service.py<br/>Script Generation"]
+            TTS["tts_service.py<br/>Audio Synthesis"]
+        end
+        
+        subgraph "utils/"
+            AUDIO["audio.py<br/>WAV Processing"]
+        end
+        
+        subgraph "routers/"
+            R_HEALTH["health.py<br/>GET /"]
+            R_ENHANCE["enhance.py<br/>POST /enhance"]
+            R_PODCAST["podcast.py<br/>POST /podcast/*"]
+            R_VOICES["voices.py<br/>GET /vozes"]
+        end
+    end
+
+    MAIN --> APP_MAIN
+    APP_MAIN --> CONFIG
+    APP_MAIN --> LOGGING
+    APP_MAIN --> R_HEALTH
+    APP_MAIN --> R_ENHANCE
+    APP_MAIN --> R_PODCAST
+    APP_MAIN --> R_VOICES
+
+    R_ENHANCE --> ENHANCE
+    R_PODCAST --> SCRIPT
+    R_PODCAST --> TTS
+    R_VOICES --> VOICES
+
+    ENHANCE --> CONFIG
+    SCRIPT --> CONFIG
+    TTS --> CONFIG
+    TTS --> AUDIO
+    TTS --> VOICES
+
+    style MAIN fill:#ffcdd2
+    style APP_MAIN fill:#c8e6c9
+    style CONFIG fill:#fff9c4
+    style LOGGING fill:#fff9c4
+    style ENHANCE fill:#bbdefb
+    style SCRIPT fill:#bbdefb
+    style TTS fill:#bbdefb
+```
+
+### Benefícios da Arquitetura
+
+| Aspecto | Benefício |
+|---------|-----------|
+| **Testabilidade** | Cada service pode ser testado isoladamente |
+| **Manutenção** | Arquivos pequenos (~50-100 linhas) fáceis de navegar |
+| **Escalabilidade** | Fácil adicionar novos serviços ou endpoints |
+| **Reutilização** | Services podem ser usados em outros projetos |
+| **Onboarding** | Estrutura clara para novos desenvolvedores |
 
 ---
 
-## 🛠️ Guia de Instalação e Uso
+## 🔄 Fluxo de Dados
+
+### Pipeline de Geração de Podcast
+
+```mermaid
+flowchart LR
+    subgraph Input["📥 Input"]
+        TEMA[Tema/Tópico]
+        DOCS[Documentos<br/>opcionais]
+        CONFIG[Configurações<br/>duração, hosts, vozes]
+    end
+
+    subgraph Processing["⚙️ Processing"]
+        direction TB
+        ENHANCE["1️⃣ Enhance<br/>(opcional)"]
+        SCRIPT["2️⃣ Script<br/>Generation"]
+        TTS["3️⃣ TTS<br/>Synthesis"]
+        WAV["4️⃣ WAV<br/>Encoding"]
+    end
+
+    subgraph Output["📤 Output"]
+        AUDIO["🎵 Podcast<br/>audio/wav"]
+    end
+
+    TEMA --> ENHANCE
+    DOCS --> SCRIPT
+    CONFIG --> SCRIPT
+    CONFIG --> TTS
+    
+    ENHANCE --> SCRIPT
+    SCRIPT --> TTS
+    TTS --> WAV
+    WAV --> AUDIO
+
+    style Input fill:#e8f5e9
+    style Processing fill:#fff3e0
+    style Output fill:#e3f2fd
+```
+
+### Detalhamento dos Estágios
+
+| Estágio | Componente | Descrição |
+|---------|------------|-----------|
+| **1️⃣ Enhance** | `EnhanceService` | Opcional. Expande ideia simples em descrição rica usando LLM |
+| **2️⃣ Script** | `ScriptService` | Gera roteiro com diálogo entre N speakers usando engenharia de prompt |
+| **3️⃣ TTS** | `TTSService` | Sintetiza áudio multi-speaker via streaming com vozes configuráveis |
+| **4️⃣ WAV** | `audio.py` | Adiciona header RIFF/WAVE canônico (24kHz, 16-bit PCM) |
+
+---
+
+## 📊 Diagrama de Sequência
+
+### Fluxo Completo: POST /podcast/generate
+
+```mermaid
+sequenceDiagram
+    autonumber
+    participant Client as 🖥️ Cliente
+    participant API as ⚡ FastAPI
+    participant Script as 📝 ScriptService
+    participant TTS as 🔊 TTSService
+    participant Gemini as ☁️ Gemini API
+
+    Client->>+API: POST /podcast/generate<br/>{tema, duracao, hosts_vozes}
+    
+    Note over API: Parse request & validate voices
+    
+    API->>+Script: generate_script(tema, duracao, num_hosts)
+    Script->>+Gemini: LLM Request (gemini-2.5-flash)
+    Gemini-->>-Script: Script formatado com Speaker 1, 2...
+    Script-->>-API: script: string
+    
+    API->>+TTS: generate_audio(script, hosts_vozes)
+    TTS->>TTS: build_speaker_voice_configs()
+    TTS->>+Gemini: TTS Streaming (gemini-2.5-pro-preview-tts)
+    
+    loop Audio Chunks
+        Gemini-->>TTS: chunk (audio/L16)
+        TTS->>TTS: convert_to_wav()
+    end
+    
+    Gemini-->>-TTS: Stream complete
+    TTS-->>-API: audio: bytes (WAV)
+    
+    API-->>-Client: 200 OK<br/>Content-Type: audio/wav
+```
+
+### Fluxo de Aprimoramento: POST /enhance
+
+```mermaid
+sequenceDiagram
+    participant Client as 🖥️ Cliente
+    participant API as ⚡ FastAPI
+    participant Enhance as ✨ EnhanceService
+    participant Gemini as ☁️ Gemini API
+
+    Client->>+API: POST /enhance<br/>{texto: "IA na indústria"}
+    API->>+Enhance: enhance_text(texto)
+    Enhance->>+Gemini: LLM Request + ENHANCE_PROMPT
+    Gemini-->>-Enhance: Texto aprimorado (3-5 parágrafos)
+    Enhance-->>-API: texto_aprimorado
+    API-->>-Client: 200 OK<br/>{texto_original, texto_aprimorado}
+```
+
+---
+
+## 🔌 API Endpoints
+
+### Visão Geral
+
+```mermaid
+graph LR
+    subgraph Endpoints["API Endpoints"]
+        direction TB
+        E1["GET /<br/>Health Check"]
+        E2["POST /enhance<br/>Aprimora texto"]
+        E3["GET /vozes<br/>Lista vozes"]
+        E4["POST /podcast/script<br/>Gera script"]
+        E5["POST /podcast/generate<br/>Gera podcast completo"]
+        E6["POST /podcast/generate-from-script<br/>Gera áudio de script"]
+    end
+
+    style E1 fill:#c8e6c9
+    style E2 fill:#bbdefb
+    style E3 fill:#fff9c4
+    style E4 fill:#ffccbc
+    style E5 fill:#ffccbc
+    style E6 fill:#ffccbc
+```
+
+### Tabela de Endpoints
+
+| Método | Endpoint | Descrição | Request | Response |
+|--------|----------|-----------|---------|----------|
+| `GET` | `/` | Health check | - | `{status, message}` |
+| `POST` | `/enhance` | Aprimora texto com IA | `Form: texto` | `{texto_original, texto_aprimorado}` |
+| `GET` | `/vozes` | Lista vozes disponíveis | - | `{vozes: [{id, nome, genero}]}` |
+| `POST` | `/podcast/script` | Gera apenas o script | `Form: tema, duracao_minutos, num_hosts` | `{script}` |
+| `POST` | `/podcast/generate` | Gera podcast completo | `Form: tema, duracao_minutos, num_hosts, hosts_vozes, documentos[]` | `audio/wav` |
+| `POST` | `/podcast/generate-from-script` | Gera áudio de script existente | `Form: script, hosts_vozes` | `audio/wav` |
+
+### Exemplo de Uso
+
+```bash
+# Gerar podcast simples
+curl -X POST http://localhost:8000/podcast/generate \
+  -F "tema=Inteligência Artificial na Indústria 4.0" \
+  -F "duracao_minutos=3" \
+  -F "num_hosts=2" \
+  -F 'hosts_vozes=[{"hostNumber":1,"vozId":"Zephyr"},{"hostNumber":2,"vozId":"Puck"}]' \
+  --output podcast.wav
+
+# Listar vozes disponíveis
+curl http://localhost:8000/vozes | jq
+```
+
+---
+
+## 📁 Estrutura do Projeto
+
+```
+podcast-api-tts/
+├── main.py                         # Entry point
+├── Dockerfile                      # Container config
+├── pyproject.toml                  # Dependencies (uv)
+├── requirements.txt                # Dependencies (pip)
+├── .env                            # Environment variables
+│
+├── app/
+│   ├── __init__.py
+│   ├── main.py                     # FastAPI app factory
+│   │
+│   ├── core/
+│   │   ├── __init__.py
+│   │   ├── config.py               # Settings & environment
+│   │   └── logging.py              # Logging configuration
+│   │
+│   ├── models/
+│   │   ├── __init__.py
+│   │   ├── schemas.py              # Pydantic request/response models
+│   │   └── voices.py               # TTS voice configurations
+│   │
+│   ├── services/
+│   │   ├── __init__.py
+│   │   ├── enhance_service.py      # Text enhancement (LLM)
+│   │   ├── script_service.py       # Script generation (LLM)
+│   │   └── tts_service.py          # Audio synthesis (TTS)
+│   │
+│   ├── utils/
+│   │   ├── __init__.py
+│   │   └── audio.py                # WAV encoding utilities
+│   │
+│   └── routers/
+│       ├── __init__.py
+│       ├── health.py               # GET /
+│       ├── enhance.py              # POST /enhance
+│       ├── podcast.py              # POST /podcast/*
+│       └── voices.py               # GET /vozes
+│
+└── diagrams/
+    └── arquitetura.drawio.png      # High-level architecture diagram
+```
+
+---
+
+## 🛠️ Instalação e Uso
 
 ### Pré-requisitos
-*   **Docker** instalado.
-*   **API Key do Google Gemini** configurada.
 
-### Rodando Localmente (Docker)
+- **Python 3.12+**
+- **uv** (recomendado) ou **pip**
+- **API Key do Google Gemini**
 
-1.  **Clone o repositório** e entre na pasta:
-    ```bash
-    cd podcast-api-tts
-    ```
+### Instalação Local
 
-2.  **Crie o arquivo `.env`**:
-    ```bash
-    echo "GEMINI_API_KEY=sua_chave_aqui" > .env
-    ```
+```bash
+# 1. Clone o repositório
+git clone <repo-url>
+cd podcast-api-tts
 
-3.  **Build e Run**:
-    ```bash
-    docker build -t podcast-api .
-    docker run -p 8080:8080 --env-file .env podcast-api
-    ```
+# 2. Configure as variáveis de ambiente
+echo "GEMINI_API_KEY=sua_chave_aqui" > .env
 
-### Endpoints Principais
+# 3. Instale as dependências
+uv sync  # ou: pip install -r requirements.txt
 
-| Método | Endpoint | Descrição |
-| :--- | :--- | :--- |
-| `POST` | `/podcast/generate` | Gera o áudio final diretamente do tema. Payload: `{"tema": "IA no futuro", "duracao_minutos": 3}` |
-| `POST` | `/podcast/script` | Gera apenas o texto do roteiro. Útil para validar o conteúdo antes de gastar cota de TTS. |
+# 4. Execute o servidor
+uv run python -m uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
+```
+
+### Executando com Docker
+
+```bash
+# Build da imagem
+docker build -t podcast-api .
+
+# Run do container
+docker run -p 8000:8000 --env-file .env podcast-api
+```
+
+### Verificação
+
+```bash
+# Health check
+curl http://localhost:8000/
+
+# Resposta esperada:
+# {"status":"ok","message":"Podcast Generator API"}
+```
 
 ---
 
-## ☁️ Deploy em Produção (Google Cloud Run)
+## ☁️ Deploy em Produção
 
-Este projeto é "Cloud Run Ready". O `Dockerfile` já configura a variável `PORT` corretamente.
-Para deploy:
+### Google Cloud Run
+
+O projeto é **Cloud Run Ready**. O Dockerfile configura automaticamente a porta correta.
+
 ```bash
-gcloud run deploy podcast-api --source . --region us-central1 --allow-unauthenticated
+# Deploy direto do source
+gcloud run deploy podcast-api \
+  --source . \
+  --region us-central1 \
+  --allow-unauthenticated \
+  --set-env-vars="GEMINI_API_KEY=sua_chave"
 ```
-Lembre-se de configurar a variável de ambiente `GEMINI_API_KEY` no painel do Cloud Run.
+
+### Arquitetura de Deploy
+
+```mermaid
+flowchart TB
+    subgraph GCP["☁️ Google Cloud Platform"]
+        CR[Cloud Run<br/>podcast-api]
+        GEMINI[Gemini API]
+    end
+    
+    subgraph Users["👥 Usuários"]
+        WEB[Web App]
+        MOBILE[Mobile App]
+    end
+    
+    WEB -->|HTTPS| CR
+    MOBILE -->|HTTPS| CR
+    CR -->|API Calls| GEMINI
+    
+    style GCP fill:#e8f5e9
+    style Users fill:#e3f2fd
+```
+
+---
+
+## 🎤 Vozes Disponíveis
+
+O sistema suporta **30 vozes** do Gemini TTS:
+
+| Femininas | Masculinas |
+|-----------|------------|
+| Achernar, Aoede, Autonoe | Achird, Algenib, Algieba |
+| Callirrhoe, Despina, Erinome | Alnilam, Charon, Enceladus |
+| Gacrux, Kore, Laomedeia | Fenrir, Iapetus, Orus |
+| Leda, Pulcherrima, Sulafat | Puck, Rasalgethi, Sadachbia |
+| Vindemiatrix, Zephyr | Sadaltager, Schedar, Umbriel, Zubenelgenubi |
+
+---
+
+## 📄 Licença
+
+MIT License - veja [LICENSE](LICENSE) para detalhes.
