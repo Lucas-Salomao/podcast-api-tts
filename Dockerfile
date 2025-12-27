@@ -52,4 +52,4 @@ EXPOSE ${PORT}
 HEALTHCHECK CMD curl --fail http://localhost:${PORT}/ || exit 1
 
 # Use shell form to expand environment variable
-CMD sh -c "uvicorn main:app --host 0.0.0.0 --port ${PORT}"
+CMD sh -c "uvicorn app.main:app --host 0.0.0.0 --port ${PORT}"

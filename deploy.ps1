@@ -1,7 +1,7 @@
 # Script de Deploy para o Google Cloud Run
 
 # Configurações
-$PROJECT_ID = "gerador-de-apostila" # Substitua pelo seu Project ID ou configure via gcloud config set project
+$PROJECT_ID = "gerador-de-podcast" # Substitua pelo seu Project ID ou configure via gcloud config set project
 $SERVICE_NAME = "gerador-de-podcast-api"
 $REGION = "us-east1" # Escolha a região desejada
 
@@ -19,17 +19,12 @@ if ($LASTEXITCODE -ne 0) {
     gcloud auth login
 }
 
-# Define o projeto se não estiver definido
+# Define o projeto (força o uso do projeto definido no script)
+Write-Host "Configurando projeto: $PROJECT_ID"
+gcloud config set project $PROJECT_ID
+
 $currentProject = gcloud config get-value project
-if (-not $currentProject) {
-    if ([string]::IsNullOrWhiteSpace($PROJECT_ID) -or $PROJECT_ID -eq "gerador-de-apostila") {
-        Write-Error "Por favor, defina o PROJECT_ID no script ou use 'gcloud config set project SEU_ID'."
-        exit 1
-    }
-    gcloud config set project $PROJECT_ID
-} else {
-    Write-Host "Usando projeto: $currentProject"
-}
+Write-Host "Usando projeto: $currentProject"
 
 # Habilita as APIs necessárias (pode demorar um pouco na primeira vez)
 Write-Host "Habilitando APIs necessárias (Cloud Build, Cloud Run, Artifact Registry)..."
@@ -68,6 +63,7 @@ gcloud run deploy $SERVICE_NAME `
 
 if ($LASTEXITCODE -eq 0) {
     Write-Host "Deploy concluído com sucesso!"
-} else {
+}
+else {
     Write-Error "Falha no deploy."
 }

@@ -4,4 +4,5 @@ google
 google-genai
 python-dotenv
 fastapi
+python-multipart
 uvicorn
