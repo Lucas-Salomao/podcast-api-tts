@@ -68,7 +68,30 @@ class TTSService:
             logger.debug(f"[TTS] Usando modelo: {settings.TTS_MODEL}")
             
             # Build voice configuration dynamically
+            # NOTE: Gemini TTS multi-speaker API only supports exactly 2 speakers
             speaker_configs = build_speaker_voice_configs(hosts_vozes)
+            
+            if len(speaker_configs) != 2:
+                logger.warning(f"[TTS] Gemini TTS requer exatamente 2 speakers, ajustando de {len(speaker_configs)} para 2")
+                # Take first 2 or pad to 2
+                if len(speaker_configs) > 2:
+                    speaker_configs = speaker_configs[:2]
+                elif len(speaker_configs) < 2:
+                    # Add default second speaker if only 1
+                    default_voices = get_default_voice_configs(2)
+                    while len(speaker_configs) < 2:
+                        idx = len(speaker_configs)
+                        speaker_configs.append(
+                            types.SpeakerVoiceConfig(
+                                speaker=f"Speaker {idx + 1}",
+                                voice_config=types.VoiceConfig(
+                                    prebuilt_voice_config=types.PrebuiltVoiceConfig(
+                                        voice_name=default_voices[idx].vozId
+                                    )
+                                ),
+                            )
+                        )
+            
             logger.debug(f"[TTS] Configuração de vozes: {[(s.speaker, s.voice_config.prebuilt_voice_config.voice_name) for s in speaker_configs]}")
             
             contents = [
