@@ -94,13 +94,19 @@ class TTSService:
             
             logger.debug(f"[TTS] Configuração de vozes: {[(s.speaker, s.voice_config.prebuilt_voice_config.voice_name) for s in speaker_configs]}")
             
+            # Build prompt with explicit speaker instructions
+            tts_prompt = f"""TTS Instructions: This is a multi-speaker podcast dialogue. 
+Use different voices for Speaker 1 and Speaker 2 as configured.
+Read aloud naturally, respecting the dialogue format where each line starts with "Speaker 1:" or "Speaker 2:".
+
+Podcast Script:
+{script}"""
+            
             contents = [
                 types.Content(
                     role="user",
                     parts=[
-                        types.Part.from_text(
-                            text=f"Please read aloud the following in a podcast interview style:\n{script}"
-                        ),
+                        types.Part.from_text(text=tts_prompt),
                     ],
                 ),
             ]
