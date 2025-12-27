@@ -14,6 +14,7 @@ from app.models.schemas import HostVoice, PodcastScriptResponse
 from app.models.voices import get_default_voice_configs
 from app.services.script_service import script_service
 from app.services.tts_service import tts_service
+from app.services.document_service import document_service
 
 logger = logging.getLogger(__name__)
 
@@ -80,16 +81,14 @@ async def create_podcast(
             default_voice.hostNumber = i
             parsed_voices.append(default_voice)
     
-    # Process documents if any
+    # Process documents using Docling
     documentos_conteudo = ""
     if documentos:
+        files_to_process = []
         for doc in documentos:
             content = await doc.read()
-            try:
-                text = content.decode("utf-8")
-                documentos_conteudo += f"\n\n--- Conteúdo do documento {doc.filename} ---\n{text}"
-            except UnicodeDecodeError:
-                logger.warning(f"[API] Não foi possível ler documento {doc.filename} como texto")
+            files_to_process.append((doc.filename, content))
+        documentos_conteudo = await document_service.process_uploaded_files(files_to_process)
     
     # Combine theme with document content
     tema_completo = tema

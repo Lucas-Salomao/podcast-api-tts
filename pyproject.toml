@@ -9,8 +9,10 @@ dependencies = [
     "google-generativeai",
     "google",
     "google-genai",
-    "google-adk",
     "python-dotenv",
     "fastapi",
     "uvicorn[standard]",
+    "docling",
+    "torch>=2.9.1",
+    "torchvision>=0.24.1",
 ]

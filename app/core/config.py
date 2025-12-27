@@ -28,8 +28,8 @@ class Settings:
     APP_VERSION: str = "1.0.0"
     
     # LLM Models
-    LLM_MODEL: str = "gemini-2.5-flash"
-    TTS_MODEL: str = "gemini-2.5-pro-preview-tts"
+    LLM_MODEL: str = os.getenv("LLM_MODEL", "gemini-2.5-flash")
+    TTS_MODEL: str = os.getenv("TTS_MODEL", "gemini-2.5-pro-preview-tts")
 
 
 @lru_cache()

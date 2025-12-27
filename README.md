@@ -32,13 +32,15 @@ O **Podcast Generator API** transforma temas em podcasts de áudio realistas e e
 | **Backend** | FastAPI + Python 3.12 | API REST assíncrona de alta performance |
 | **Roteirização** | Gemini 2.5 Flash | Geração de scripts com engenharia de prompt |
 | **Síntese de Voz** | Gemini 2.5 Pro TTS | Multi-speaker com 30+ vozes disponíveis |
-| **Containerização** | Docker | Deploy portável e escalável |
+| **Processamento de Docs** | Docling (IBM) | Extração de texto de PDF, DOCX, XLSX, PPTX, TXT |
+| **Containerização** | Docker | Deploy portável e escalável (CPU-only) |
 
 ### Features
 
 - ✅ **Multi-host**: Suporta de 1 a 10 apresentadores
 - ✅ **30 vozes**: Femininas e masculinas com personalidades distintas
-- ✅ **Upload de documentos**: Use PDFs/textos como base para o conteúdo
+- ✅ **Upload de documentos**: PDF, DOCX, XLSX, PPTX, TXT (até 20 arquivos)
+- ✅ **Extração inteligente**: Docling com OCR, tabelas e layout avançado
 - ✅ **Aprimoramento de texto**: IA expande ideias simples em descrições ricas
 - ✅ **Preview de script**: Valide o roteiro antes de gerar o áudio
 - ✅ **Output WAV**: Áudio de alta qualidade (24kHz, 16-bit PCM)
@@ -58,6 +60,7 @@ flowchart TB
         FAST[FastAPI Server]
         
         subgraph Services["Services Layer"]
+            DS[Document Service<br/>Docling]
             ES[Enhance Service]
             SS[Script Service]
             TTS[TTS Service]
@@ -69,11 +72,13 @@ flowchart TB
         GEMINI_TTS[Gemini 2.5 Pro<br/>TTS]
     end
 
-    FE -->|"POST /podcast/generate"| FAST
+    FE -->|"POST /podcast/generate<br/>+ documentos[]"| FAST
+    FAST --> DS
     FAST --> ES
     FAST --> SS
     FAST --> TTS
     
+    DS -->|"Extrai texto"| SS
     ES -->|"Aprimora texto"| GEMINI_LLM
     SS -->|"Gera script"| GEMINI_LLM
     TTS -->|"Sintetiza áudio"| GEMINI_TTS
@@ -83,6 +88,7 @@ flowchart TB
     style Cliente fill:#e1f5fe
     style API fill:#fff3e0
     style External fill:#f3e5f5
+    style DS fill:#c8e6c9
 ```
 
 ---
@@ -111,6 +117,7 @@ graph TD
         end
         
         subgraph "services/"
+            DOCUMENT["document_service.py<br/>Document Processing"]
             ENHANCE["enhance_service.py<br/>Text Enhancement"]
             SCRIPT["script_service.py<br/>Script Generation"]
             TTS["tts_service.py<br/>Audio Synthesis"]
@@ -137,15 +144,19 @@ graph TD
     APP_MAIN --> R_VOICES
 
     R_ENHANCE --> ENHANCE
+    R_PODCAST --> DOCUMENT
     R_PODCAST --> SCRIPT
     R_PODCAST --> TTS
     R_VOICES --> VOICES
 
+    DOCUMENT --> CONFIG
     ENHANCE --> CONFIG
     SCRIPT --> CONFIG
     TTS --> CONFIG
     TTS --> AUDIO
     TTS --> VOICES
+
+    style DOCUMENT fill:#c8e6c9
 
     style MAIN fill:#ffcdd2
     style APP_MAIN fill:#c8e6c9
@@ -211,6 +222,7 @@ flowchart LR
 
 | Estágio | Componente | Descrição |
 |---------|------------|-----------|
+| **📄 Document** | `DocumentService` | Extrai texto de PDF, DOCX, XLSX, PPTX, TXT via Docling |
 | **1️⃣ Enhance** | `EnhanceService` | Opcional. Expande ideia simples em descrição rica usando LLM |
 | **2️⃣ Script** | `ScriptService` | Gera roteiro com diálogo entre N speakers usando engenharia de prompt |
 | **3️⃣ TTS** | `TTSService` | Sintetiza áudio multi-speaker via streaming com vozes configuráveis |
@@ -352,6 +364,7 @@ podcast-api-tts/
 │   │
 │   ├── services/
 │   │   ├── __init__.py
+│   │   ├── document_service.py     # Document extraction (Docling)
 │   │   ├── enhance_service.py      # Text enhancement (LLM)
 │   │   ├── script_service.py       # Script generation (LLM)
 │   │   └── tts_service.py          # Audio synthesis (TTS)
@@ -366,6 +379,10 @@ podcast-api-tts/
 │       ├── enhance.py              # POST /enhance
 │       ├── podcast.py              # POST /podcast/*
 │       └── voices.py               # GET /vozes
+│
+├── scripts/
+│   ├── install_docling.sh          # Install PyTorch CPU + Docling
+│   └── download_models.py          # Pre-cache Docling models
 │
 └── diagrams/
     └── arquitetura.drawio.png      # High-level architecture diagram
@@ -455,6 +472,68 @@ flowchart TB
     
     style GCP fill:#e8f5e9
     style Users fill:#e3f2fd
+```
+
+---
+
+## 📄 Processamento de Documentos (Docling)
+
+O sistema utiliza a biblioteca **Docling** (IBM Research) para extrair texto de documentos de forma inteligente.
+
+### Formatos Suportados
+
+| Formato | Extensão | Recursos |
+|---------|----------|----------|
+| **PDF** | `.pdf` | OCR, layout avançado, tabelas |
+| **Word** | `.docx` | Formatação preservada |
+| **Excel** | `.xlsx` | Extração de tabelas |
+| **PowerPoint** | `.pptx` | Slides e notas |
+| **Texto** | `.txt` | UTF-8 / Latin-1 |
+
+### Pipeline de Processamento
+
+```mermaid
+flowchart LR
+    subgraph Upload["📤 Upload"]
+        FILES[Até 20 arquivos]
+    end
+    
+    subgraph Docling["🔍 Docling"]
+        DETECT[Detectar formato]
+        EXTRACT[Extrair texto]
+        MARKDOWN[Converter para Markdown]
+    end
+    
+    subgraph Output["📝 Output"]
+        CONTEXT[Contexto para LLM]
+    end
+    
+    FILES --> DETECT
+    DETECT --> EXTRACT
+    EXTRACT --> MARKDOWN
+    MARKDOWN --> CONTEXT
+    
+    style Docling fill:#c8e6c9
+```
+
+### Configuração CPU-Only
+
+O Docker está configurado para usar **apenas CPU**, reduzindo significativamente o tamanho da imagem:
+
+| Configuração | Valor |
+|--------------|-------|
+| `CUDA_VISIBLE_DEVICES` | `""` (vazio) |
+| `TORCH_DEVICE` | `cpu` |
+| PyTorch | Versão CPU-only (~200MB vs ~2GB) |
+
+### Scripts de Instalação
+
+```bash
+# Install PyTorch CPU + Docling (usado no Dockerfile)
+./scripts/install_docling.sh
+
+# Pre-download de modelos (executado durante build)
+python scripts/download_models.py
 ```
 
 ---
