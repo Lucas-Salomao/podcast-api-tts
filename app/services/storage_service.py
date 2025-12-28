@@ -71,6 +71,7 @@ class StorageService:
     def get_signed_url(self, blob_path: str, expiration_hours: int = 1) -> str:
         """
         Generate a signed URL for private bucket access.
+        Uses IAM signing for Cloud Run compatibility.
         
         Args:
             blob_path: Path to the blob in the bucket
@@ -79,13 +80,44 @@ class StorageService:
         Returns:
             Signed URL for accessing the audio file
         """
+        import google.auth
+        from google.auth import compute_engine
+        from google.auth.transport import requests
+        
         blob = self.bucket.blob(blob_path)
         
-        url = blob.generate_signed_url(
-            version="v4",
-            expiration=timedelta(hours=expiration_hours),
-            method="GET",
-        )
+        # Get credentials and request object for IAM signing
+        auth_request = requests.Request()
+        credentials, project = google.auth.default()
+        
+        # Refresh credentials to get the service account email
+        credentials.refresh(auth_request)
+        
+        # Get service account email from metadata
+        service_account_email = getattr(credentials, 'service_account_email', None)
+        
+        if service_account_email:
+            # Use IAM signing (works on Cloud Run)
+            signing_credentials = compute_engine.IDTokenCredentials(
+                auth_request,
+                target_audience="",
+                service_account_email=service_account_email,
+            )
+            
+            url = blob.generate_signed_url(
+                version="v4",
+                expiration=timedelta(hours=expiration_hours),
+                method="GET",
+                service_account_email=service_account_email,
+                access_token=credentials.token,
+            )
+        else:
+            # Fallback for local development with service account key
+            url = blob.generate_signed_url(
+                version="v4",
+                expiration=timedelta(hours=expiration_hours),
+                method="GET",
+            )
         
         logger.debug(f"[STORAGE] Generated signed URL for {blob_path}")
         return url
